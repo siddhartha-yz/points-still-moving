@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 from manim import (
+    AnimationGroup,
     BLACK,
     BLUE,
     BLUE_A,
@@ -25,7 +26,6 @@ from manim import (
     Line,
     Scene,
     Text,
-    Transform,
     VGroup,
     ValueTracker,
     WHITE,
@@ -79,10 +79,10 @@ TARGETS = FEATURES @ TRUE_W + TRUE_B + NOISE
 
 HIGHLIGHT_INDEX = 3
 MINIBATCH_SIZE = 4
-LEARNING_RATE = 0.035
+LEARNING_RATE = 0.05
 INITIAL_W = np.array([[-0.45]], dtype=float)
 INITIAL_B = np.array([[1.75]], dtype=float)
-SGD_STEPS = 18
+SGD_STEPS = 9
 
 
 def mean_squared_loss(weight: np.ndarray, bias: np.ndarray) -> float:
@@ -92,21 +92,22 @@ def mean_squared_loss(weight: np.ndarray, bias: np.ndarray) -> float:
 
 
 def make_minibatches() -> list[np.ndarray]:
-    """Fixed, reproducible batches; the haloed sample recurs during training."""
+    """Fixed mini-batches, with the traveler present in each visible update."""
     generator = np.random.default_rng(31)
     other_indices = np.delete(np.arange(len(FEATURES)), HIGHLIGHT_INDEX)
     batches: list[np.ndarray] = []
-    for step in range(SGD_STEPS):
-        if step % 3 == 0:
-            batch = np.concatenate(
+    for _ in range(SGD_STEPS - 1):
+        batches.append(
+            np.concatenate(
                 (
                     [HIGHLIGHT_INDEX],
                     generator.choice(other_indices, size=MINIBATCH_SIZE - 1, replace=False),
                 )
             )
-        else:
-            batch = generator.choice(np.arange(len(FEATURES)), size=MINIBATCH_SIZE, replace=False)
-        batches.append(batch)
+        )
+    # The final batch is another real batch from the point cloud. It leaves
+    # a small visible noise residual rather than fitting the haloed sample exactly.
+    batches.append(np.array([HIGHLIGHT_INDEX, 0, 4, 7]))
     return batches
 
 
@@ -134,11 +135,12 @@ TRAINING_STATES = mini_batch_sgd()
 
 
 class Episode031(Scene):
-    """One continuous 24.6-second silent D2L 3.1 visualization."""
+    """One continuous 25-second silent D2L 3.1 visualization."""
 
     x_min, x_max = -3.0, 3.0
     y_min, y_max = -3.2, 4.0
-    plot_left, plot_right = -6.35, 2.05
+    # Leave a dedicated label pocket to the left of the point cloud.
+    plot_left, plot_right = -5.35, 2.05
     plot_bottom, plot_top = -3.35, 2.75
 
     def plot_point(self, x_value: float, y_value: float) -> np.ndarray:
@@ -203,10 +205,10 @@ class Episode031(Scene):
         final_prediction = highlighted_x @ final_weight + final_bias
         final_residual = final_prediction - highlighted_y
         print(
-            "D2L 3.1 true w={:.6f}, true b={:.6f}, x=[{:.6f}], y={:.6f}, "
+            "D2L 3.1 final w={:.6f}, final b={:.6f}, x={:.6f}, y={:.6f}, "
             "final yhat={:.6f}, final residual={:+.6f}".format(
-                TRUE_W.item(),
-                TRUE_B.item(),
+                final_weight.item(),
+                final_bias.item(),
                 highlighted_x.item(),
                 highlighted_y.item(),
                 final_prediction.item(),
@@ -214,20 +216,21 @@ class Episode031(Scene):
             )
         )
 
-        # 0.00–0.37 s: only the chapter mark; it ends before the plot arrives.
+        # 0.00–0.40 s: a short card, with no overlap into the scatter reveal.
         chapter_mark = Text("3.1", font_size=66, color=WHITE)
         self.add(chapter_mark)
-        self.wait(0.25)
-        self.play(FadeOut(chapter_mark), run_time=0.12, rate_func=linear)
+        self.wait(0.24)
+        self.play(FadeOut(chapter_mark), run_time=0.16, rate_func=linear)
 
         grid, axes = self.make_grid_and_axes()
         palette = (YELLOW, BLUE, YELLOW, BLUE, YELLOW, BLUE, YELLOW, BLUE, YELLOW, BLUE, YELLOW, BLUE, YELLOW, BLUE)
-        point_cloud = VGroup(
-            *[
-                Dot(self.plot_point(feature.item(), target.item()), radius=0.068, color=color).set_fill(color, opacity=0.96)
-                for feature, target, color in zip(FEATURES, TARGETS, palette)
-            ]
-        )
+        data_dots = [
+            Dot(self.plot_point(feature.item(), target.item()), radius=0.068, color=color)
+            .set_fill(color, opacity=0.94)
+            .set_stroke(color, width=0.0, opacity=0.0)
+            for feature, target, color in zip(FEATURES, TARGETS, palette)
+        ]
+        point_cloud = VGroup(*data_dots)
 
         weight_tracker = ValueTracker(initial_weight.item())
         bias_tracker = ValueTracker(initial_bias.item())
@@ -242,14 +245,14 @@ class Episode031(Scene):
             return float((highlighted_x @ current_weight() + current_bias()).item())
 
         prediction_line = always_redraw(
-            lambda: Line(
-                *self.clipped_line_points(weight_tracker.get_value(), bias_tracker.get_value())
-            ).set_stroke(YELLOW, width=5.0, opacity=0.96)
+            lambda: Line(*self.clipped_line_points(weight_tracker.get_value(), bias_tracker.get_value())).set_stroke(
+                YELLOW, width=5.0, opacity=0.96
+            )
         )
         prediction_dot = always_redraw(
             lambda: Dot(
                 self.plot_point(highlighted_x.item(), current_prediction()),
-                radius=0.075,
+                radius=0.078,
                 color=YELLOW,
             ).set_fill(YELLOW, opacity=1.0)
         )
@@ -257,124 +260,151 @@ class Episode031(Scene):
             lambda: Line(
                 self.plot_point(highlighted_x.item(), highlighted_y.item()),
                 self.plot_point(highlighted_x.item(), current_prediction()),
-            ).set_stroke(YELLOW_A, width=3.4, opacity=0.96)
+            ).set_stroke(YELLOW_A, width=3.6, opacity=0.98)
         )
 
         halo_center = self.plot_point(highlighted_x.item(), highlighted_y.item())
-        halo_outer = Circle(radius=0.265).move_to(halo_center).set_stroke(BLUE_A, width=2.1, opacity=0.45)
+        halo_outer = Circle(radius=0.265).move_to(halo_center).set_stroke(BLUE_A, width=2.1, opacity=0.48)
         halo_inner = Circle(radius=0.172).move_to(halo_center).set_stroke(YELLOW, width=2.8, opacity=0.98)
-        sample_symbol = Text("x", font_size=26, color=WHITE).next_to(halo_outer, np.array([0.0, 1.0, 0.0]), buff=0.07)
-
-        # Every selection ring maps directly to the batch that makes the next SGD update.
-        def make_batch_markers(batch_indices: np.ndarray) -> VGroup:
-            return VGroup(
-                *[
-                    Circle(radius=0.285 if index == HIGHLIGHT_INDEX else 0.165)
-                    .move_to(self.plot_point(FEATURES[index].item(), TARGETS[index].item()))
-                    .set_stroke(YELLOW if index == HIGHLIGHT_INDEX else BLUE_D, width=1.6, opacity=0.82)
-                    for index in batch_indices
-                ]
-            )
-
-        batch_markers = make_batch_markers(MINIBATCHES[0])
-
-        formula = Text("ŷ = wᵀx + b", font_size=38, color=WHITE).move_to(np.array([4.25, 3.12, 0.0]))
-        dimensions = Text("x ∈ ℝ¹     w ∈ ℝ¹     b ∈ ℝ", font_size=22, color=BLUE_A).move_to(np.array([4.25, 2.58, 0.0]))
-        sample_x_readout = Text(f"x = [{highlighted_x.item():+.2f}]ᵀ", font_size=25, color=BLUE_A).move_to(
-            np.array([4.25, 1.72, 0.0])
+        # Fixed left-pocket labels cannot collide with the traveler, residual,
+        # yellow line, or a neighboring data point. Use a true minus glyph so
+        # the negative feature value remains unmistakable.
+        sample_x_label = Text(f"x = −{abs(highlighted_x.item()):.2f}", font_size=24, color=BLUE_A).move_to(
+            np.array([-6.18, -1.18, 0.0])
         )
-        sample_y_readout = Text(f"y = {highlighted_y.item():+.3f}", font_size=25, color=BLUE_A).move_to(
-            np.array([4.25, 1.30, 0.0])
+        sample_y_label = Text(f"y = −{abs(highlighted_y.item()):.3f}", font_size=24, color=BLUE_A).move_to(
+            np.array([-6.18, -1.63, 0.0])
         )
-        batch_readout = Text(f"|B| = {MINIBATCH_SIZE}     η = {LEARNING_RATE:.3f}", font_size=23, color=BLUE_D).move_to(
-            np.array([4.25, 0.66, 0.0])
-        )
+
+        formula = Text("ŷ = wx + b", font_size=35, color=WHITE).move_to(np.array([4.65, 3.08, 0.0]))
 
         def make_number_row(label: str, y_position: float, color, signed: bool) -> tuple[VGroup, DecimalNumber]:
-            prefix = Text(label, font_size=29, color=WHITE)
+            prefix = Text(label, font_size=21, color=WHITE)
             number = DecimalNumber(
                 0.0,
                 num_decimal_places=3,
-                # DecimalNumber defaults to MathTex, which would require a
-                # LaTeX toolchain. Pango Text keeps these changing numerals
-                # lightweight and is consistent with the rest of the scene.
                 mob_class=Text,
                 include_sign=signed,
                 color=color,
-                font_size=30,
+                font_size=22,
             )
-            row = VGroup(prefix, number).arrange(np.array([1.0, 0.0, 0.0]), buff=0.16).move_to(
-                np.array([4.22, y_position, 0.0])
+            row = VGroup(prefix, number).arrange(np.array([1.0, 0.0, 0.0]), buff=0.10).move_to(
+                np.array([4.78, y_position, 0.0])
             )
             return row, number
 
-        weight_row, weight_number = make_number_row("w =", -0.28, BLUE_A, True)
-        bias_row, bias_number = make_number_row("b =", -0.82, YELLOW_A, True)
-        loss_row, loss_number = make_number_row("L =", -1.36, WHITE, False)
-        residual_row, residual_number = make_number_row("rₓ =", -1.90, YELLOW_A, True)
-
+        weight_row, weight_number = make_number_row("w =", 2.43, BLUE_A, True)
+        bias_row, bias_number = make_number_row("b =", 2.04, YELLOW_A, True)
+        loss_row, loss_number = make_number_row("L =", 1.65, WHITE, False)
         weight_number.set_value(weight_tracker.get_value())
         bias_number.set_value(bias_tracker.get_value())
         loss_number.set_value(mean_squared_loss(current_weight(), current_bias()))
-        residual_number.set_value(current_prediction() - highlighted_y.item())
         weight_number.add_updater(lambda number: number.set_value(weight_tracker.get_value()))
         bias_number.add_updater(lambda number: number.set_value(bias_tracker.get_value()))
         loss_number.add_updater(lambda number: number.set_value(mean_squared_loss(current_weight(), current_bias())))
-        residual_number.add_updater(lambda number: number.set_value(current_prediction() - highlighted_y.item()))
-        rows = VGroup(weight_row, bias_row, loss_row, residual_row)
+        secondary_readout = VGroup(weight_row, bias_row, loss_row)
 
-        # 0.37–3.09 s: build the geometry, then introduce the one haloed point.
+        prediction_prefix = Text("ŷ = ", font_size=24, color=YELLOW)
+        prediction_number = DecimalNumber(
+            current_prediction(),
+            num_decimal_places=3,
+            mob_class=Text,
+            include_sign=True,
+            color=YELLOW_A,
+            font_size=24,
+        )
+        prediction_label = VGroup(prediction_prefix, prediction_number).arrange(
+            np.array([1.0, 0.0, 0.0]), buff=0.08
+        )
+        prediction_number.add_updater(lambda number: number.set_value(current_prediction()))
+
+        def prediction_label_position() -> np.ndarray:
+            """Place ŷ along the line's normal, never over the yellow stroke."""
+            horizontal_scale = (self.plot_right - self.plot_left) / (self.x_max - self.x_min)
+            vertical_scale = (self.plot_top - self.plot_bottom) / (self.y_max - self.y_min)
+            scene_slope = weight_tracker.get_value() * vertical_scale / horizontal_scale
+            normal = np.array([-scene_slope, 1.0, 0.0])
+            normal /= np.linalg.norm(normal)
+            return self.plot_point(highlighted_x.item(), current_prediction()) + normal * 0.78
+
+        prediction_label.add_updater(lambda label: label.move_to(prediction_label_position()))
+        residual_label = Text("r", font_size=24, color=YELLOW_A)
+
+        def residual_label_position() -> np.ndarray:
+            prediction_position = self.plot_point(highlighted_x.item(), current_prediction())
+            target_position = self.plot_point(highlighted_x.item(), highlighted_y.item())
+            if np.linalg.norm(prediction_position - target_position) >= 0.58:
+                return (prediction_position + target_position) / 2 + np.array([0.27, 0.0, 0.0])
+            # Near convergence, protect the tiny residual from label clutter:
+            # ŷ sits on the upper line normal while r stays lower-right.
+            return prediction_position + np.array([0.45, -0.38, 0.0])
+
+        residual_label.add_updater(lambda label: label.move_to(residual_label_position()))
+
+        # 0.40–3.45 s: plot and label the traveler before any incorrect line appears.
         self.play(
             FadeIn(grid),
             FadeIn(axes),
-            LaggedStart(*[FadeIn(point) for point in point_cloud], lag_ratio=0.035),
-            run_time=0.78,
+            LaggedStart(*[FadeIn(point) for point in point_cloud], lag_ratio=0.025),
+            run_time=0.75,
             rate_func=linear,
-        )
-        self.play(
-            FadeIn(prediction_line),
-            FadeIn(formula),
-            FadeIn(dimensions),
-            FadeIn(sample_x_readout),
-            FadeIn(sample_y_readout),
-            run_time=0.68,
-            rate_func=smooth,
         )
         self.play(
             Create(halo_outer),
             Create(halo_inner),
-            FadeIn(sample_symbol),
-            FadeIn(residual_segment),
-            FadeIn(prediction_dot),
+            FadeIn(sample_x_label),
+            FadeIn(sample_y_label),
             Flash(halo_center, color=YELLOW, flash_radius=0.42, line_length=0.11),
-            run_time=0.58,
+            run_time=0.55,
             rate_func=smooth,
         )
+        self.wait(1.75)
+
+        # 3.45–4.75 s: the bad line and its long, visually unambiguous residual.
+        self.play(FadeIn(prediction_line), FadeIn(formula), run_time=0.75, rate_func=smooth)
         self.play(
-            FadeIn(batch_readout),
-            FadeIn(batch_markers),
-            FadeIn(rows),
-            run_time=0.68,
+            FadeIn(residual_segment),
+            FadeIn(prediction_dot),
+            FadeIn(prediction_label),
+            FadeIn(residual_label),
+            FadeIn(secondary_readout),
+            run_time=0.55,
             rate_func=smooth,
         )
 
-        # 3.09–20.19 s: exactly 18 real mini-batch updates.  Each transition
-        # interpolates the genuine adjacent SGD states, so the line, L, and rₓ
-        # remain numerically consistent at every rendered frame.
+        # 4.75–21.85 s: each of nine true mini-batch updates is deliberately slow.
+        # The active four points brighten in their own source colors; their Dot
+        # geometry is never scaled, so the full cloud keeps its original size.
         for update_index, (next_weight, next_bias) in enumerate(TRAINING_STATES[1:]):
-            next_markers = make_batch_markers(MINIBATCHES[update_index])
+            active_indices = MINIBATCHES[update_index]
+            brightening = AnimationGroup(
+                *[
+                    data_dots[index]
+                    .animate.set_fill(palette[index], opacity=1.0)
+                    .set_stroke(palette[index], width=3.2, opacity=1.0)
+                    for index in active_indices
+                ],
+                lag_ratio=0.06,
+            )
+            dimming = AnimationGroup(
+                *[
+                    data_dots[index]
+                    .animate.set_fill(palette[index], opacity=0.94)
+                    .set_stroke(palette[index], width=0.0, opacity=0.0)
+                    for index in active_indices
+                ],
+                lag_ratio=0.06,
+            )
+            self.play(brightening, run_time=0.28, rate_func=smooth)
             self.play(
                 weight_tracker.animate.set_value(next_weight.item()),
                 bias_tracker.animate.set_value(next_bias.item()),
-                Transform(batch_markers, next_markers),
-                run_time=0.95,
+                run_time=1.38,
                 rate_func=smooth,
             )
+            self.play(dimming, run_time=0.24, rate_func=smooth)
 
-        # 20.19–23.99 s: hold the noisy, nonzero final residual in view.
-        self.play(
-            halo_outer.animate.set_stroke(YELLOW, width=3.0, opacity=1.0),
-            run_time=0.34,
-            rate_func=smooth,
-        )
-        self.wait(3.46)
+        # 21.85–25.10 s: a timed no-op keeps every live updater rendered through
+        # the final encoded frame (a terminal ``wait`` can freeze them unevenly).
+        final_hold = ValueTracker(0.0)
+        self.play(final_hold.animate.set_value(1.0), run_time=3.25, rate_func=linear)
