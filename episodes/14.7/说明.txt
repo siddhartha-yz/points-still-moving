@@ -1,0 +1,28 @@
+集号：14.7（14.7 词的相似性和类比任务）
+机制：词向量平行四边形：king-man+woman≈queen
+教材：https://zh.d2l.ai/chapter_natural-language-processing-pretraining/similarity-analogy.html
+
+片内必须出现的符号、维数、关键数字（须与 scene.py 的 numpy 一致）：
+片内可见符号与读数：x₁、x₂、14.7、king − man + woman ≈ queen、ŷ、ŷ₁ = 2.02、ŷ₂ = 1.75
+与 scene.py numpy 对过的数：
+D2L 14.7 man=[0.3 , 0.35] woman=[1.8 , 0.48] king=[0.52, 1.62] queen=[1.84, 1.52]
+composed=king-man+woman=[2.02, 1.75]
+residual=composed-queen=[0.18, 0.23] dist=0.292062
+NOTES 点名、须在画面上对得上的数：14.7、2.02、1.75、0.30、0.35、1.80、0.48、0.52、1.62、1.84、1.52
+
+节拍（画面里先后发生什么）：
+1. 半秒 14.7：章节号。
+2. 描边坐标格，轴上是 x_1,x_2。二维，所以平行四边形能画在纸上。
+3. 四个词元：man、woman、king、queen。蓝与白是身份，不是「男/女」两类。
+4. 公式只出现一次：king − man + woman ≈ queen。
+5. 先画 man→woman、man→king，再从 king 把同一条偏移走出去。黄点 hat y 从 king 滑到 (2.02, 1.75)。
+6. 光晕圈住 hat y。左侧固定口袋写 ŷ_1=2.02、ŷ_2=1.75，就是这个点的两个分量，不是一张向量清单。
+7. 补上 woman→hat y，平行四边形合上。虚线连到 queen。停住时四点、平行四边形、旅行者都还在。
+
+主角光晕：光晕圈的是合成向量 hat y，不是 queen 自己。
+最后一帧：补上 woman→hat y，平行四边形合上。虚线连到 queen。停住时四点、平行四边形、旅行者都还在。
+
+刻意没演：余弦 k 近邻表、GloVe / fastText 加载、BERT、首都-国家或比较级那些其它类比。
+片内禁止中文句子。没有旁白。只有符号、维数、正在变化的数，以及半秒章节号。
+
+成片：https://github.com/siddhartha-yz/points-still-moving/releases/tag/14.7
